@@ -13,7 +13,7 @@ from .resources.webhooks import Webhooks
 
 DEFAULT_BASE_URL = "https://api.quolle.com"
 DEFAULT_TIMEOUT = 30.0
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 class Quolle:

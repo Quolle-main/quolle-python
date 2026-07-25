@@ -16,6 +16,7 @@ Basic usage::
 
 from .client import Quolle
 from .errors import QuolleError
+from .resources.emails import attachment
 
-__all__ = ["Quolle", "QuolleError"]
-__version__ = "1.0.0"
+__all__ = ["Quolle", "QuolleError", "attachment"]
+__version__ = "1.1.0"

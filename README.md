@@ -93,6 +93,24 @@ result = quolle.emails.send_batch([
 print(f"Queued {result['queued']}: {result['ids']}")
 ```
 
+### Attachments
+
+Attach files with `attachments` — a list of dicts (`filename`, base64 `content`,
+optional `contentType`). Use `quolle.attachment()` to read and encode a file for you.
+Up to 20 files, 10 MB total.
+
+```python
+from quolle import Quolle, attachment
+
+quolle.emails.send(
+    from_="billing@mail.yourdomain.com",
+    to="customer@example.com",
+    subject="Your invoice",
+    html="<p>Invoice attached.</p>",
+    attachments=[attachment("invoice.pdf")],
+)
+```
+
 ## Retrieve & cancel
 
 ```python
