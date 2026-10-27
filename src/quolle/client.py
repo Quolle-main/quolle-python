@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import socket
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
@@ -13,7 +14,7 @@ from .resources.webhooks import Webhooks
 
 DEFAULT_BASE_URL = "https://api.quolle.com"
 DEFAULT_TIMEOUT = 30.0
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 class Quolle:
@@ -99,7 +100,18 @@ class Quolle:
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     raw = resp.read().decode("utf-8")
-                    return _json.loads(raw) if raw else {}
+                if not raw:
+                    return {}
+                try:
+                    return _json.loads(raw)
+                except ValueError:
+                    # A 2xx that isn't JSON (a proxy page, a truncated body) is
+                    # an error, not an empty success.
+                    raise QuolleError(
+                        "Unexpected non-JSON response from the Quolle API",
+                        status_code=resp.status,
+                        data={"body": raw[:500]},
+                    ) from None
             except urllib.error.HTTPError as exc:
                 raw = exc.read().decode("utf-8") if exc.fp else ""
                 payload: Dict[str, Any] = {}
@@ -108,13 +120,16 @@ class Quolle:
                 except ValueError:
                     payload = {}
                 message = payload.pop("error", None) or exc.reason or "Request failed"
-                last_error = QuolleError(message, status_code=exc.code, data=payload)
+                code = payload.pop("code", None)
+                last_error = QuolleError(message, status_code=exc.code, data=payload, code=code)
                 if attempt < self.max_retries and safe_to_retry(exc.code):
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     _time.sleep(self._backoff(attempt, retry_after))
                     continue
                 raise last_error from None
-            except (urllib.error.URLError, TimeoutError) as exc:
+            # socket.timeout is TimeoutError only from Python 3.10; on 3.8/3.9 a
+            # read timeout escaped as a raw socket.timeout.
+            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
                 reason = getattr(exc, "reason", exc)
                 last_error = QuolleError(f"Network error: {reason}")
                 if attempt < self.max_retries and safe_to_retry(None):

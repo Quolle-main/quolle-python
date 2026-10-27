@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote as _urlquote
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Union
+
+
+def _quote(email_id: str) -> str:
+    """Path-safe id: a '/' or '?' in an id must never change the URL."""
+    return _urlquote(str(email_id), safe="")
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..client import Quolle
@@ -57,6 +63,7 @@ def _build_payload(
     scheduled_at: Optional[str] = None,
     attachments: Optional[List[Dict[str, Any]]] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    message_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     # ``from`` is a Python keyword, so the SDK accepts ``from_`` and maps it.
     payload: Dict[str, Any] = {"from": from_, "to": list(to) if not isinstance(to, str) else to}
@@ -78,6 +85,10 @@ def _build_payload(
         payload["attachments"] = attachments
     if metadata is not None:
         payload["metadata"] = metadata
+    if message_type is not None:
+        if message_type not in ("transactional", "marketing"):
+            raise ValueError('message_type must be "transactional" or "marketing"')
+        payload["type"] = message_type
     return payload
 
 
@@ -101,6 +112,7 @@ class Emails:
         attachments: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,
+        message_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Queue an email for immediate or scheduled delivery.
 
@@ -115,10 +127,14 @@ class Emails:
 
         Pass ``idempotency_key`` to make retries safe — the same key returns the
         original result instead of sending twice.
+
+        ``message_type`` is ``"transactional"`` (the default) or ``"marketing"``.
+        Marketing mail gets one-click unsubscribe headers and a footer link, and
+        honours unsubscribes; transactional mail never does.
         """
         payload = _build_payload(
             from_, to, subject, html, text, template, variables,
-            reply_to, scheduled_at, attachments, metadata,
+            reply_to, scheduled_at, attachments, metadata, message_type,
         )
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._client.request("POST", "/v1/emails/send", payload, headers)
@@ -140,9 +156,9 @@ class Emails:
 
     def get(self, email_id: str) -> Dict[str, Any]:
         """Retrieve a single email by ID (status, timestamps, open/click counts)."""
-        resp = self._client.request("GET", f"/v1/emails/{email_id}")
+        resp = self._client.request("GET", f"/v1/emails/{_quote(email_id)}")
         return resp.get("email", resp)
 
     def cancel(self, email_id: str) -> Dict[str, Any]:
         """Cancel a scheduled email that has not yet been sent."""
-        return self._client.request("DELETE", f"/v1/emails/{email_id}/cancel")
+        return self._client.request("DELETE", f"/v1/emails/{_quote(email_id)}/cancel")
