@@ -132,6 +132,7 @@ try:
                        subject="Welcome!", html="<h1>Welcome</h1>")
 except QuolleError as err:
     print(err.status_code)  # e.g. 402
+    print(err.code)         # e.g. "monthly_quota_exceeded" — branch on this
     print(err.message)      # e.g. "Monthly limit reached"
     print(err.data)         # extra fields, e.g. {"limit": 3000}
 ```

@@ -19,4 +19,4 @@ from .errors import QuolleError
 from .resources.emails import attachment
 
 __all__ = ["Quolle", "QuolleError", "attachment"]
-__version__ = "1.1.0"
+__version__ = "1.2.0"

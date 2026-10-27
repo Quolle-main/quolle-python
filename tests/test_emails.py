@@ -237,3 +237,72 @@ def test_webhook_verify_rejects_wrong_secret():
     header = f"t={ts},v1={_sign('whsec_right', ts, body)}"
     with pytest.raises(QuolleError):
         q.webhooks.verify(body, header, "whsec_wrong")
+
+
+# ── Alignment with the API (error code, message type, ids, bad responses) ─────
+
+def test_error_exposes_the_api_code(monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+
+    def fake_urlopen(req, timeout=None):
+        body = json.dumps({"code": "warmup_limit_exceeded", "error": "Warm-up cap reached"}).encode()
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, io.BytesIO(body))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    q = Quolle(api_key="qle_test", max_retries=0)
+    with pytest.raises(QuolleError) as exc:
+        q.emails.send(from_="a@b.co", to="c@d.co", subject="s", html="<p>x</p>")
+    assert exc.value.code == "warmup_limit_exceeded"
+    assert exc.value.status_code == 429
+    assert "code" not in exc.value.data
+
+
+def test_marketing_type_is_sent_and_validated(monkeypatch):
+    cap = {}
+    patch_transport(monkeypatch, cap, payload={"id": "em_2"})
+    q = Quolle(api_key="qle_test")
+    q.emails.send(from_="a@b.co", to="c@d.co", subject="s", html="<p>x</p>", message_type="marketing")
+    assert cap["body"]["type"] == "marketing"
+    with pytest.raises(ValueError):
+        q.emails.send(from_="a@b.co", to="c@d.co", subject="s", html="<p>x</p>", message_type="promo")
+
+
+def test_transactional_by_default_omits_type(monkeypatch):
+    cap = {}
+    patch_transport(monkeypatch, cap, payload={"id": "em_3"})
+    Quolle(api_key="qle_test").emails.send(from_="a@b.co", to="c@d.co", subject="s", html="<p>x</p>")
+    assert "type" not in cap["body"]
+
+
+def test_email_ids_are_url_encoded(monkeypatch):
+    cap = {}
+    patch_transport(monkeypatch, cap, payload={"email": {"id": "x"}})
+    Quolle(api_key="qle_test").emails.get("../keys?x=1")
+    assert cap["url"].endswith("/v1/emails/..%2Fkeys%3Fx%3D1")
+
+
+def test_non_json_success_raises(monkeypatch):
+    import urllib.request
+
+    class Html(FakeResponse):
+        def __init__(self):
+            self.status = 200
+            self._raw = b"<html>proxy error</html>"
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: Html())
+    with pytest.raises(QuolleError):
+        Quolle(api_key="qle_test").emails.get("em_1")
+
+
+def test_socket_timeout_becomes_a_quolle_error(monkeypatch):
+    import socket
+    import urllib.request
+
+    def boom(req, timeout=None):
+        raise socket.timeout("timed out")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    with pytest.raises(QuolleError):
+        Quolle(api_key="qle_test", max_retries=0).emails.get("em_1")
