@@ -10,10 +10,12 @@ from typing import Any, Dict, Optional
 from .errors import QuolleError
 from .resources.emails import Emails  # noqa: F401  (re-exported via self.emails)
 from .resources.webhooks import Webhooks
+from .resources.domains import Domains
+from .resources.api_keys import ApiKeys
 
 DEFAULT_BASE_URL = "https://api.quolle.com"
 DEFAULT_TIMEOUT = 30.0
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 
 
@@ -56,8 +58,12 @@ class Quolle:
 
         #: Email operations (send, send_batch, get, cancel).
         self.emails = Emails(self)
-        #: Webhook signature verification.
-        self.webhooks = Webhooks()
+        #: Webhook signature verification and endpoint management.
+        self.webhooks = Webhooks(self)
+        #: Sending domains (needs a full-access key).
+        self.domains = Domains(self)
+        #: API keys (needs a full-access key).
+        self.api_keys = ApiKeys(self)
 
     # -- Internal request helper ------------------------------------------------
 
