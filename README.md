@@ -172,7 +172,7 @@ Verification checks the HMAC-SHA256 signature and rejects timestamps outside a 5
 
 ## Automatic retries
 
-Transient failures — HTTP 429 (rate limit) and 5xx, plus network errors — are retried automatically with exponential backoff, honoring the `Retry-After` header. To avoid double-sending, a POST is only retried on a 5xx/network error when you pass an idempotency key; a 429 is always safe to retry (the request was never processed). Tune with `max_retries` (default 3) on the constructor.
+Transient failures — HTTP 429 (rate limit) and 5xx, plus network errors — are retried automatically with exponential backoff, honoring the `Retry-After` header. To avoid double-sending, a POST is only retried on a 5xx/network error when you pass an idempotency key; a 429 is always safe to retry (the request was never processed). Quota limits are the exception: `daily_quota_exceeded` and `warmup_limit_exceeded` (and any `Retry-After` over 60 seconds) are raised immediately, because they reset at a fixed time, not in seconds; catch them and queue the send for later. Tune with `max_retries` (default 3) on the constructor.
 
 ## License
 

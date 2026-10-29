@@ -306,3 +306,42 @@ def test_socket_timeout_becomes_a_quolle_error(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     with pytest.raises(QuolleError):
         Quolle(api_key="qle_test", max_retries=0).emails.get("em_1")
+
+
+# ── Quota 429s are not retried (they reset at a fixed time, not in seconds) ───
+
+@pytest.mark.parametrize("code", ["daily_quota_exceeded", "warmup_limit_exceeded"])
+def test_quota_429_is_raised_at_once_not_retried(monkeypatch, code):
+    import urllib.request
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise _http_error(429, "Too Many Requests", json.dumps({"code": code, "error": "cap reached"}))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda *_: pytest.fail("must not sleep"))
+    q = Quolle(api_key="qle_test")
+    with pytest.raises(QuolleError) as exc:
+        q.emails.send(from_="a@b.com", to="c@d.com", subject="s", html="<p>x</p>")
+    assert exc.value.code == code
+    assert calls["n"] == 1
+
+
+def test_429_with_a_long_retry_after_is_raised_not_slept_through(monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        body = json.dumps({"code": "rate_limit_exceeded", "error": "slow down"}).encode()
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"Retry-After": "3600"}, io.BytesIO(body))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda *_: pytest.fail("must not sleep an hour"))
+    q = Quolle(api_key="qle_test")
+    with pytest.raises(QuolleError):
+        q.emails.send(from_="a@b.com", to="c@d.com", subject="s", html="<p>x</p>")
+    assert calls["n"] == 1
