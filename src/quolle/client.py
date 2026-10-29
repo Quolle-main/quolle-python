@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json as _json
-import socket
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
@@ -142,9 +141,9 @@ class Quolle:
                     _time.sleep(wait)
                     continue
                 raise last_error from None
-            # socket.timeout is TimeoutError only from Python 3.10; on 3.8/3.9 a
-            # read timeout escaped as a raw socket.timeout.
-            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            # From Python 3.10 socket.timeout is TimeoutError, so a read
+            # timeout is caught here too.
+            except (urllib.error.URLError, TimeoutError) as exc:
                 reason = getattr(exc, "reason", exc)
                 last_error = QuolleError(f"Network error: {reason}")
                 if attempt < self.max_retries and safe_to_retry(None):
