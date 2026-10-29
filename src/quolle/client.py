@@ -17,6 +17,15 @@ DEFAULT_TIMEOUT = 30.0
 __version__ = "1.2.0"
 
 
+
+# 429s that retrying can't fix: the limit resets at a fixed time (midnight UTC,
+# the next billing period), not in a few seconds. Raised at once so the caller
+# can queue the send for later instead of blocking in a retry loop.
+_NO_RETRY_CODES = frozenset({"daily_quota_exceeded", "warmup_limit_exceeded", "monthly_quota_exceeded"})
+# A Retry-After longer than this is the API saying "not soon": raise instead of
+# sleeping through it.
+_MAX_RETRY_WAIT = 60.0
+
 class Quolle:
     """The Quolle API client.
 
@@ -64,6 +73,9 @@ class Quolle:
 
         Transient failures (HTTP 429 and 5xx, plus network errors) are retried
         with exponential backoff, honoring the ``Retry-After`` header on 429.
+        Quota 429s (``daily_quota_exceeded``, ``warmup_limit_exceeded``) and any
+        ``Retry-After`` over 60 seconds are raised at once: they clear at a
+        fixed time, so the caller should queue the send rather than wait.
         To avoid double-sending, a POST is only retried on a 5xx/network error
         when an ``Idempotency-Key`` is present; a 429 (rate limited, so the
         request was never processed) is always safe to retry.
@@ -88,9 +100,11 @@ class Quolle:
         idempotent_method = method.upper() in ("GET", "DELETE")
         has_idem = any(k.lower() == "idempotency-key" for k in req_headers)
 
-        def safe_to_retry(status: Optional[int]) -> bool:
+        def safe_to_retry(status: Optional[int], code: Optional[str] = None) -> bool:
             if status == 429:
-                return True  # not processed — always safe
+                # Not processed, so safe — but a quota that resets tomorrow
+                # (or at midnight UTC) can't be waited out in a retry loop.
+                return code not in _NO_RETRY_CODES
             transient = status is None or 500 <= status <= 504
             return transient and (idempotent_method or has_idem)
 
@@ -122,9 +136,10 @@ class Quolle:
                 message = payload.pop("error", None) or exc.reason or "Request failed"
                 code = payload.pop("code", None)
                 last_error = QuolleError(message, status_code=exc.code, data=payload, code=code)
-                if attempt < self.max_retries and safe_to_retry(exc.code):
-                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                    _time.sleep(self._backoff(attempt, retry_after))
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                wait = self._backoff(attempt, retry_after)
+                if attempt < self.max_retries and safe_to_retry(exc.code, code) and wait <= _MAX_RETRY_WAIT:
+                    _time.sleep(wait)
                     continue
                 raise last_error from None
             # socket.timeout is TimeoutError only from Python 3.10; on 3.8/3.9 a
