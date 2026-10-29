@@ -8,7 +8,7 @@ Official Python client for the [Quolle](https://quolle.com) email API.
 pip install quolle
 ```
 
-Requires Python 3.8+. No third-party dependencies.
+Requires Python 3.10+ (the oldest version still receiving security fixes). No third-party dependencies.
 
 ## Quick start
 
